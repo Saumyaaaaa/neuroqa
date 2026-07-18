@@ -1,50 +1,12 @@
-model:
-  name: transformer
-  n_channels: 19
-  sequence_length: 512
-  patch_size: 32
-  d_model: 128
-  nhead: 4
-  num_layers: 4
-  dim_feedforward: 256
-  n_classes: 2
-  dropout: 0.1
-
-training:
-  batch_size: 32
-  learning_rate: 0.001
-  epochs: 50
-  seed: 42
-
-data:
-  sampling_rate: 256
-  window_seconds: 2
-  overlap: 0.5
-  channels:
-    - Fp1
-    - Fp2
-    - F3
-    - F4
-    - C3
-    - C4
-    - P3
-    - P4
-    - O1
-    - O2
-    - F7
-    - F8
-    - T3
-    - T4
-    - T5
-    - T6
-    - Fz
-    - Cz
-    - Pz
-
-api:
-  host: "0.0.0.0"
-  port: 8000
-  model_path: "checkpoints/best_model.pt"
-
-logging:
-  level: "INFO"
+sampling_rate: 256
+target_channels:
+  - Fp1
+  - Fp2
+  - F3
+  - F4
+  - C3
+  - C4
+  - P3
+  - P4
+  - O1
+  - O2

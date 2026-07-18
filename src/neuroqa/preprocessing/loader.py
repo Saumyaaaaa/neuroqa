@@ -1,125 +1,117 @@
 """EDF loading utilities for NeuroQA preprocessing."""
 
 from __future__ import annotations
-
 import logging
-import sys
+import os
 from pathlib import Path
-
+import sys
 import mne
 import numpy as np
 import yaml
 
+# Module-level logging setup
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 class ChannelNotFoundError(Exception):
-    """Raised when one or more requested EEG channels are absent from an EDF file."""
+    """Exception raised when requested EEG channels are missing from the EDF file."""
+    pass
 
 
 class SamplingRateError(Exception):
-    """Raised when an EDF file's sampling rate cannot be reconciled with the target rate."""
+    """Exception raised when there is an issue handling or verifying the sampling rate."""
+    pass
 
 
 def load_edf(
-    filepath: str,
-    target_channels: list[str],
-    target_sfreq: int = 256,
-) -> tuple[np.ndarray, dict[str, str | int | float]]:
-    """Load and preprocess an EDF file for NeuroQA.
-
-    Loads the file, validates channel availability, selects the requested
-    channels, optionally resamples to the target sampling rate, and returns
-    the EEG data array with accompanying metadata.
+    filepath: str, 
+    target_channels: list[str], 
+    target_sfreq: int = 256
+) -> tuple[np.ndarray, dict]:
+    """Loads an EDF file, filters specific channels, validates presence, and resamples.
 
     Args:
-        filepath: Path to the EDF file on disk.
-        target_channels: Ordered list of channel names to extract.
-        target_sfreq: Desired sampling rate in Hz. Defaults to 256.
+        filepath: Path to the input EDF data file.
+        target_channels: List of channel labels expected to be present and extracted.
+        target_sfreq: The desired output sampling rate in Hz. Defaults to 256.
 
     Returns:
         A tuple containing:
-            - EEG data as a float32 array of shape ``(n_channels, n_timepoints)``.
-            - Metadata dictionary with keys ``subject_id``, ``sampling_rate``,
-              ``duration_seconds``, and ``n_channels``.
+            - np.ndarray: Processed EEG data matrix of shape (n_channels, n_timepoints)
+              cast explicitly as float32.
+            - dict: Extracted file metadata containing 'subject_id', 'sampling_rate',
+              'duration_seconds', and 'n_channels'.
 
     Raises:
-        ValueError: If ``filepath`` does not exist.
-        ChannelNotFoundError: If any ``target_channels`` are missing from the file.
+        ValueError: If the provided filepath does not point to an existing file.
+        ChannelNotFoundError: If one or more channels in target_channels are 
+            not found in the recording.
     """
-    path = Path(filepath)
-    if not path.is_file():
+    if not os.path.exists(filepath):
         raise ValueError(f"EDF file not found: {filepath}")
 
-    raw = mne.io.read_raw_edf(str(path), preload=True)
+    # Load file with preloading enabled to allow processing operations
+    raw = mne.io.read_raw_edf(filepath, preload=True, verbose=False)
 
-    available_channels = set(raw.ch_names)
-    missing_channels = [
-        channel for channel in target_channels if channel not in available_channels
-    ]
+    # Validate channel presence
+    available_channels = raw.ch_names
+    missing_channels = [ch for ch in target_channels if ch not in available_channels]
     if missing_channels:
-        missing_list = ", ".join(missing_channels)
         raise ChannelNotFoundError(
-            f"The following channels were not found in the EDF file: {missing_list}"
+            f"The following required channels were not found in the recording: {missing_channels}"
         )
 
-    raw.pick(target_channels)
+    # Isolate strictly to target channels
+    raw.pick_channels(target_channels, ordered=True)
 
+    # Check sampling frequency and resample if necessary
     current_sfreq = int(raw.info["sfreq"])
     if current_sfreq != target_sfreq:
         logger.warning(
-            "Resampling from %d Hz to %d Hz for file: %s",
-            current_sfreq,
-            target_sfreq,
-            filepath,
+            f"Sampling rate mismatch for {filepath}. Expected {target_sfreq}Hz, found {current_sfreq}Hz. Resampling."
         )
-        raw.resample(target_sfreq)
+        raw.resample(sfreq=float(target_sfreq), verbose=False)
 
-    data = raw.get_data().astype(np.float32)
-    duration_seconds = float(raw.n_times / raw.info["sfreq"])
+    # Extract scientific data array as float32
+    data: np.ndarray = raw.get_data().astype(np.float32)
 
-    metadata: dict[str, str | int | float] = {
-        "subject_id": path.stem,
-        "sampling_rate": target_sfreq,
-        "duration_seconds": duration_seconds,
-        "n_channels": len(target_channels),
+    # Construct metadata footprint
+    metadata = {
+        "subject_id": str(Path(filepath).stem),
+        "sampling_rate": int(raw.info["sfreq"]),
+        "duration_seconds": float(raw.times[-1] + (1.0 / raw.info["sfreq"])),
+        "n_channels": len(raw.ch_names),
     }
 
     return data, metadata
 
 
-def _load_default_config() -> dict:
-    """Load the project default YAML configuration.
-
-    Returns:
-        Parsed configuration dictionary from ``configs/default.yaml``.
-    """
-    config_path = Path(__file__).resolve().parents[3] / "configs" / "default.yaml"
-    with config_path.open(encoding="utf-8") as config_file:
-        return yaml.safe_load(config_file)
-
-
-def main(filepath: str) -> dict[str, str | int | float]:
-    """Load an EDF file using standard 10-20 channels from the default config.
-
-    Args:
-        filepath: Path to the EDF file on disk.
-
-    Returns:
-        Metadata dictionary produced by :func:`load_edf`.
-    """
-    config = _load_default_config()
-    target_channels: list[str] = config["data"]["channels"]
-    target_sfreq: int = config["data"]["sampling_rate"]
-
-    _, metadata = load_edf(
-        filepath,
-        target_channels,
-        target_sfreq=target_sfreq,
-    )
-    return metadata
-
-
 if __name__ == "__main__":
-    metadata = main(sys.argv[1])
-    print(metadata)
+    if len(sys.argv) < 2:
+        sys.exit("Usage: python -m neuroqa.preprocessing.loader <path_to_edf>")
+
+    input_file = sys.argv[1]
+    config_path = Path("configs/default.yaml")
+
+    # Fallback default 10-20 channels if config yaml hasn't been generated
+    channels = ["Fp1", "Fp2", "F3", "F4", "C3", "C4", "P3", "P4", "O1", "O2"]
+    sfreq_target = 256
+
+    if config_path.exists():
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+            if config:
+                channels = config.get("target_channels", channels)
+                sfreq_target = config.get("sampling_rate", sfreq_target)
+
+    try:
+        # Purity check: execution wrapper handling output natively at shell level
+        _, meta = load_edf(filepath=input_file, target_channels=channels, target_sfreq=sfreq_target)
+        
+        # Safe printing strictly inside execution gate
+        import json
+        print(json.dumps(meta, indent=4))
+        
+    except Exception as e:
+        sys.exit(f"Execution Error: {e}")
