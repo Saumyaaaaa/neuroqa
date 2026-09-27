@@ -141,8 +141,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if candidate.is_file():
             model_path = candidate
         else:
-            logger.error("ONNX model file not found at %s", model_path)
-            raise FileNotFoundError(f"ONNX model file not found at: {model_path}")
+            logger.info(
+                "ONNX model file not found at %s. Generating model...", model_path
+            )
+            try:
+                from neuroqa.models.exporter import export_to_onnx
+                from neuroqa.models.registry import create_model
+
+                model = create_model(config)
+                export_to_onnx(
+                    model=model,
+                    output_path=str(model_path),
+                    n_channels=config.get("model", {}).get("n_channels", 19),
+                    window_samples=config.get("model", {}).get("window_samples", 512),
+                    opset_version=14,
+                )
+                logger.info("ONNX model generated successfully at %s", model_path)
+            except Exception as exc:
+                logger.error("Failed to generate ONNX model: %s", exc)
+                raise FileNotFoundError(
+                    f"ONNX model file not found at: {model_path}"
+                ) from exc
 
     session = ort.InferenceSession(
         str(model_path),

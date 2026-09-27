@@ -18,7 +18,6 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Model checkpoints and export artifacts
-checkpoints/
-*.onnx
+# Model checkpoints (ignore large raw weights, track exported ONNX)
 *.pt
+checkpoints/*.pt
