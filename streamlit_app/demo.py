@@ -205,9 +205,11 @@ def main() -> None:
         elif "onrender.com" in api_url and health_resp.status_code == 404:
             st.sidebar.warning(
                 "🟡 **Render Cloud is Offline (404)**\n\n"
-                "The Render service is still building or inactive.\n\n"
-                "👉 **Select 'Local' above** for instant inference on your running local server!"
+                "The Render service is still building or inactive."
             )
+            if st.sidebar.button("⚡ Switch to Local Server", key="switch_to_local_btn"):
+                st.session_state["api_target_radio"] = "Local (http://localhost:8000)"
+                st.rerun()
         else:
             st.sidebar.warning(f"🟡 Server returned HTTP {health_resp.status_code}")
     except httpx.ConnectError:
@@ -215,6 +217,9 @@ def main() -> None:
             st.sidebar.error("🔴 **Local server not detected**\n\nRun:\n`uvicorn neuroqa.api.app:app --reload`")
         else:
             st.sidebar.error("🔴 **Cloud server unreachable**\n\nRender may be sleeping or building.")
+            if st.sidebar.button("⚡ Switch to Local Server", key="switch_to_local_btn_err"):
+                st.session_state["api_target_radio"] = "Local (http://localhost:8000)"
+                st.rerun()
     except Exception:
         st.sidebar.warning(f"🟡 Connection check failed for `{api_url}`")
 
@@ -232,11 +237,45 @@ def main() -> None:
             with st.spinner("Analysing EEG segment..."):
                 try:
                     predict_endpoint = f"{api_url.rstrip('/')}/predict"
-                    response = httpx.post(
-                        predict_endpoint,
-                        json={"eeg_segment": signal.tolist()},
-                        timeout=15.0,
-                    )
+                    try:
+                        response = httpx.post(
+                            predict_endpoint,
+                            json={"eeg_segment": signal.tolist()},
+                            timeout=15.0,
+                        )
+                    except (httpx.ConnectError, httpx.TimeoutException) as conn_err:
+                        if "localhost" not in api_url and "127.0.0.1" not in api_url:
+                            try:
+                                loc_check = httpx.get("http://localhost:8000/health", timeout=1.5)
+                                if loc_check.status_code == 200:
+                                    st.info("ℹ️ Cloud service unreachable. Automatically routed to your active local server (`http://localhost:8000`).")
+                                    predict_endpoint = "http://localhost:8000/predict"
+                                    response = httpx.post(
+                                        predict_endpoint,
+                                        json={"eeg_segment": signal.tolist()},
+                                        timeout=15.0,
+                                    )
+                                else:
+                                    raise conn_err
+                            except Exception:
+                                raise conn_err
+                        else:
+                            raise conn_err
+
+                    # If Cloud returned 404, fallback to active local server
+                    if response.status_code == 404 and "localhost" not in api_url and "127.0.0.1" not in api_url:
+                        try:
+                            loc_check = httpx.get("http://localhost:8000/health", timeout=1.5)
+                            if loc_check.status_code == 200:
+                                st.info("ℹ️ Cloud endpoint returned 404. Automatically routed to your active local server (`http://localhost:8000`).")
+                                predict_endpoint = "http://localhost:8000/predict"
+                                response = httpx.post(
+                                    predict_endpoint,
+                                    json={"eeg_segment": signal.tolist()},
+                                    timeout=15.0,
+                                )
+                        except Exception:
+                            pass
                     if response.status_code == 200:
                         result = response.json()
                         prediction = result.get("prediction", "")
