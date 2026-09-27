@@ -106,6 +106,14 @@ def create_signal_figure(
     return fig
 
 
+def render_plotly_chart(fig: go.Figure) -> None:
+    """Render Plotly figure with forward and backwards compatibility for Streamlit."""
+    try:
+        st.plotly_chart(fig, width="stretch")
+    except TypeError:
+        st.plotly_chart(fig, use_container_width=True)
+
+
 def main() -> None:
     """Main execution entry point for Streamlit application."""
     st.set_page_config(
@@ -166,7 +174,25 @@ def main() -> None:
             "Synthetic 19-channel, 512-sample recording with simulated ocular artifact on Fp1."
         )
 
-    api_url = st.sidebar.text_input("API URL", value="https://neuroqa-api.onrender.com")
+    st.sidebar.markdown("---")
+    st.sidebar.header("API Configuration")
+    api_target = st.sidebar.selectbox(
+        "API Target",
+        options=[
+            "Local (http://localhost:8000)",
+            "Render Cloud (https://neuroqa-api.onrender.com)",
+            "Custom",
+        ],
+        index=0,
+    )
+    if api_target == "Local (http://localhost:8000)":
+        default_url = "http://localhost:8000"
+    elif api_target == "Render Cloud (https://neuroqa-api.onrender.com)":
+        default_url = "https://neuroqa-api.onrender.com"
+    else:
+        default_url = "http://localhost:8000"
+
+    api_url = st.sidebar.text_input("API URL", value=default_url)
     run_detection = st.sidebar.button("🔍 Run Detection", type="primary")
 
     if signal is not None:
@@ -175,7 +201,7 @@ def main() -> None:
             signal,
             title="EEG Signal Preview (4 of 19 channels)",
         )
-        st.plotly_chart(preview_fig, use_container_width=True)
+        render_plotly_chart(preview_fig)
 
         if run_detection:
             with st.spinner("Analysing EEG segment..."):
@@ -237,8 +263,14 @@ def main() -> None:
                             title="EEG Signal with Suspicious Windows Highlighted",
                             highlight_windows=top_windows,
                         )
-                        st.plotly_chart(annotated_fig, use_container_width=True)
+                        render_plotly_chart(annotated_fig)
 
+                    elif response.status_code == 404:
+                        st.error(
+                            f"API endpoint not found (HTTP 404) at `{predict_endpoint}`.\n\n"
+                            "• If running locally, select **Local (http://localhost:8000)** in the sidebar.\n"
+                            "• If using Render Cloud, the cloud service may still be building or spinning up."
+                        )
                     elif response.status_code == 422:
                         detail = response.json().get("detail", response.text)
                         st.error(f"Input validation error (HTTP 422): {detail}")
