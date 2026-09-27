@@ -166,7 +166,7 @@ def main() -> None:
             "Synthetic 19-channel, 512-sample recording with simulated ocular artifact on Fp1."
         )
 
-    api_url = st.sidebar.text_input("API URL", value="http://localhost:8000")
+    api_url = st.sidebar.text_input("API URL", value="https://neuroqa-api.onrender.com")
     run_detection = st.sidebar.button("🔍 Run Detection", type="primary")
 
     if signal is not None:
