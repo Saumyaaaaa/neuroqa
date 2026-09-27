@@ -176,23 +176,42 @@ def main() -> None:
 
     st.sidebar.markdown("---")
     st.sidebar.header("API Configuration")
-    api_target = st.sidebar.selectbox(
-        "API Target",
+    api_target = st.sidebar.radio(
+        "API Server",
         options=[
             "Local (http://localhost:8000)",
             "Render Cloud (https://neuroqa-api.onrender.com)",
             "Custom",
         ],
         index=0,
+        key="api_target_radio",
     )
     if api_target == "Local (http://localhost:8000)":
-        default_url = "http://localhost:8000"
+        api_url = "http://localhost:8000"
     elif api_target == "Render Cloud (https://neuroqa-api.onrender.com)":
-        default_url = "https://neuroqa-api.onrender.com"
+        api_url = "https://neuroqa-api.onrender.com"
     else:
-        default_url = "http://localhost:8000"
+        api_url = st.sidebar.text_input(
+            "Custom API URL",
+            value="http://localhost:8000",
+            key="custom_api_url_input",
+        )
 
-    api_url = st.sidebar.text_input("API URL", value=default_url)
+    # Show live connection badge in the sidebar
+    try:
+        health_resp = httpx.get(f"{api_url.rstrip('/')}/health", timeout=2.0)
+        if health_resp.status_code == 200:
+            st.sidebar.success(f"🟢 **Connected**: `{api_url}`")
+        else:
+            st.sidebar.warning(f"🟡 Server returned HTTP {health_resp.status_code}")
+    except httpx.ConnectError:
+        if "localhost" in api_url or "127.0.0.1" in api_url:
+            st.sidebar.error("🔴 **Local server not detected**\n\nRun:\n`uvicorn neuroqa.api.app:app --reload`")
+        else:
+            st.sidebar.error("🔴 **Cloud server unreachable**\n\nRender may be sleeping or building.")
+    except Exception:
+        st.sidebar.warning(f"🟡 Connection check failed for `{api_url}`")
+
     run_detection = st.sidebar.button("🔍 Run Detection", type="primary")
 
     if signal is not None:
