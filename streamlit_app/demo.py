@@ -202,6 +202,12 @@ def main() -> None:
         health_resp = httpx.get(f"{api_url.rstrip('/')}/health", timeout=2.0)
         if health_resp.status_code == 200:
             st.sidebar.success(f"🟢 **Connected**: `{api_url}`")
+        elif "onrender.com" in api_url and health_resp.status_code == 404:
+            st.sidebar.warning(
+                "🟡 **Render Cloud is Offline (404)**\n\n"
+                "The Render service is still building or inactive.\n\n"
+                "👉 **Select 'Local' above** for instant inference on your running local server!"
+            )
         else:
             st.sidebar.warning(f"🟡 Server returned HTTP {health_resp.status_code}")
     except httpx.ConnectError:
@@ -287,8 +293,8 @@ def main() -> None:
                     elif response.status_code == 404:
                         st.error(
                             f"API endpoint not found (HTTP 404) at `{predict_endpoint}`.\n\n"
-                            "• If running locally, select **Local (http://localhost:8000)** in the sidebar.\n"
-                            "• If using Render Cloud, the cloud service may still be building or spinning up."
+                            "• **If running locally**: Select **Local (http://localhost:8000)** under **API Server** in the left sidebar.\n"
+                            "• **If using Render Cloud**: The cloud service is either still building, sleeping, or not yet active on Render."
                         )
                     elif response.status_code == 422:
                         detail = response.json().get("detail", response.text)
