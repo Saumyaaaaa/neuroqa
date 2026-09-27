@@ -6,8 +6,7 @@ from neuroqa.models.transformer import EEGTransformer
 
 _MODEL_KEYS = (
     "n_channels",
-    "sequence_length",
-    "patch_size",
+    "window_samples",
     "d_model",
     "nhead",
     "num_layers",
@@ -43,8 +42,7 @@ def create_model(config: dict) -> EEGTransformer:
 
     return EEGTransformer(
         n_channels=model_config["n_channels"],
-        sequence_length=model_config["sequence_length"],
-        patch_size=model_config["patch_size"],
+        window_samples=model_config["window_samples"],
         d_model=model_config["d_model"],
         nhead=model_config["nhead"],
         num_layers=model_config["num_layers"],
