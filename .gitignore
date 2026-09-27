@@ -17,3 +17,8 @@ ENV/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Model checkpoints and export artifacts
+checkpoints/
+*.onnx
+*.pt

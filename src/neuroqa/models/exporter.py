@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from pathlib import Path
@@ -10,6 +11,13 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 import torch
+import torch.nn.attention
+
+# Ensure torch.nn.attention.sdp_kernel exists across PyTorch versions
+if not hasattr(torch.nn.attention, "sdp_kernel") and hasattr(
+    torch.backends.cuda, "sdp_kernel"
+):
+    torch.nn.attention.sdp_kernel = torch.backends.cuda.sdp_kernel
 
 from neuroqa.models.transformer import EEGTransformer
 
@@ -52,19 +60,34 @@ def export_to_onnx(
     with torch.no_grad():
         pytorch_output = model(dummy_input)
 
-    torch.onnx.export(
-        model,
-        dummy_input,
-        str(output_file),
-        input_names=["eeg_input"],
-        output_names=["logits"],
-        dynamic_axes={
-            "eeg_input": {0: "batch_size"},
-            "logits": {0: "batch_size"},
-        },
-        opset_version=opset_version,
-        do_constant_folding=True,
-    )
+    if not hasattr(torch.nn.attention, "sdp_kernel") and hasattr(
+        torch.backends.cuda, "sdp_kernel"
+    ):
+        torch.nn.attention.sdp_kernel = torch.backends.cuda.sdp_kernel
+
+    extra_export_args: dict[str, object] = {}
+    if "dynamo" in inspect.signature(torch.onnx.export).parameters:
+        extra_export_args["dynamo"] = False
+
+    with torch.nn.attention.sdp_kernel(
+        enable_flash=False,
+        enable_math=True,
+        enable_mem_efficient=False,
+    ):
+        torch.onnx.export(
+            model,
+            dummy_input,
+            str(output_file),
+            input_names=["eeg_input"],
+            output_names=["logits"],
+            dynamic_axes={
+                "eeg_input": {0: "batch_size"},
+                "logits": {0: "batch_size"},
+            },
+            opset_version=opset_version,
+            do_constant_folding=True,
+            **extra_export_args,
+        )
 
     logger.info("ONNX file written. Validating graph...")
 

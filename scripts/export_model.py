@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Allow running without setting PYTHONPATH manually
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
 
 import torch
 import yaml
@@ -94,8 +104,8 @@ def main() -> None:
             n_channels=config["data"]["n_channels"]
             if "n_channels" in config.get("data", {})
             else 19,
-            sequence_length=config["model"].get("sequence_length", 512),
-            opset_version=17,
+            window_samples=config["model"].get("window_samples", 512),
+            opset_version=14,
         )
     except Exception as exc:
         console.print(f"[red]Export failed: {exc}[/red]")
@@ -123,7 +133,7 @@ def main() -> None:
             bench = benchmark_onnx(
                 onnx_path=args.output,
                 n_channels=19,
-                sequence_length=512,
+                window_samples=config["model"].get("window_samples", 512),
                 n_runs=args.n_runs,
             )
         except Exception as exc:
